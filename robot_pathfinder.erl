@@ -133,8 +133,8 @@ find_lowest_f_cost([Node1, Node2 | Rest], CompareF) ->
 compare_nodes(#node{f_cost = F1}, #node{f_cost = F2}) -> F1 =< F2.
 
 %% @doc A* algorithm implementation
--spec a_star(position(), position()) -> path() | {error, no_path}.
-a_star(Start, Goal) ->
+-spec a_star(position(), position(), [position()]) -> path() | {error, no_path}.
+a_star(Start, Goal, Obstacles) ->
     %% Initialize first node
     StartNode = #node{
         position = Start, 
@@ -144,13 +144,13 @@ a_star(Start, Goal) ->
     },
     
     %% Start path finding
-    find_path([StartNode], [], Goal).
+    find_path([StartNode], [], Goal,Obstacles).
 
 %% @doc Recursive path finding
--spec find_path([#node{}], [position()], position()) -> path() | {error, no_path}.
-find_path([], _, _) -> 
+-spec find_path([#node{}], [position()], position(), [position()]) -> path() | {error, no_path}.
+find_path([], _, _, _) -> 
     {error, no_path};
-find_path(OpenList, ClosedList, Goal) ->
+find_path(OpenList, ClosedList, Goal, Obstacles) ->
     
     CurrentNode = find_lowest_f_cost(OpenList, fun compare_nodes/2),
     
@@ -169,7 +169,8 @@ find_path(OpenList, ClosedList, Goal) ->
             Neighbors = lists:filter(
                 fun(Move) -> 
                     is_valid_move(Move) andalso 
-                    not lists:member(Move, NewClosedList)
+                    not lists:member(Move, NewClosedList) andalso
+                    not lists:member(Move, Obstacles)
                 end, 
                 generate_moves(CurrentNode#node.position)
             ),
@@ -205,25 +206,26 @@ find_path(OpenList, ClosedList, Goal) ->
             ),
             
             %% Continue searching
-            find_path(UpdatedOpenList, NewClosedList, Goal)
+            find_path(UpdatedOpenList, NewClosedList, Goal, Obstacles)
     end.
 
 %% @doc Find paths for multiple robots
 -spec find_paths([position()], [position()]) -> [path()] | {error, {no_path_for_robot, position(), position()}}.
 find_paths(RobotStarts, RobotGoals) ->
-    find_paths(RobotStarts, RobotGoals, []).
+    find_paths(RobotStarts, RobotGoals, [], RobotStarts).
 
--spec find_paths([position()], [position()], [path()]) -> [path()] | {error, {no_path_for_robot, position(), position()}}.
-find_paths([], [], Paths) ->
+-spec find_paths([position()], [position()], [path()], [position()]) -> [path()] | {error, {no_path_for_robot, position(), position()}}.
+find_paths([], [], Paths, _) ->
     lists:reverse(Paths);
-find_paths([Start|StartRest], [Goal|GoalRest], Paths) ->
+find_paths([Start|StartRest], [Goal|GoalRest], Paths, Obstacles) ->
     %% Find path for current robot
-    case a_star(Start, Goal) of
+    case a_star(Start, Goal, Obstacles) of
         {error, no_path} -> 
             {error, {no_path_for_robot, Start, Goal}};
         Path ->
             %% Recurse with updated paths
-            find_paths(StartRest, GoalRest, [Path | Paths])
+            NewObstacles = Obstacles ++ Path,
+            find_paths(StartRest, GoalRest, [Path | Paths], NewObstacles)
     end.
 
 %% @doc Example usage with database storage
@@ -263,5 +265,5 @@ start(N, Initial, Final) ->
             %% Display all stored data
             get_all_data()
     end.
-    %%% Initial= [{1,1}, {5,5}].
-    %%% Final = [{5,5}, {9,9}].
+    %%% Initial = [{2,1},{2,5},{2,3},{2,4}].
+    %%% Final = [{8,4},{4,9},{5,2},{10,4}].
