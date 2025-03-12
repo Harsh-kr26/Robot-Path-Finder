@@ -1,13 +1,15 @@
 -module(robot_pathfinder).
 -export([find_paths/2, start/3, init_db/0, store_grid_info/1, store_robot_info/3, store_path/2, get_all_data/0]).
 
-%% Type definitions
+%% @doc Type definitions
+%% @end 
 -type position() :: {integer(), integer()}.
 -type path() :: [position()].
 -type robot_id() :: integer().
 -type grid_size() :: {pos_integer(), pos_integer()}.
 
-%% Define records for node
+%% @doc Define records for node
+%% @end
 -record(node, {
     position :: position(),
     g_cost = 0 :: non_neg_integer(),
@@ -16,12 +18,14 @@
     parent = undefined :: undefined | #node{}
 }).
 
-%% Define Mnesia table records
+%% @doc Define Mnesia table records
+%% @end
 -record(grid_info, {key :: atom(), size :: grid_size()}).
 -record(robot_info, {id :: robot_id(), start_pos :: position(), goal_pos :: position()}).
 -record(robot_path, {id :: robot_id(), path :: path()}).
 
 %% @doc Initialize Mnesia database
+%% @end
 -spec init_db() -> ok.
 init_db() ->
     mnesia:create_schema([node()]),
@@ -38,6 +42,7 @@ init_db() ->
     mnesia:wait_for_tables([grid_info, robot_info, robot_path], 5000).
 
 %% @doc Store grid size
+%% @end
 -spec store_grid_info(grid_size()) -> {atomic, ok} | {aborted, any()}.
 store_grid_info(Size) ->
     Transaction = fun() ->
@@ -46,6 +51,7 @@ store_grid_info(Size) ->
     mnesia:transaction(Transaction).
 
 %% @doc Store robot information
+%% @end
 -spec store_robot_info(robot_id(), position(), position()) -> {atomic, ok} | {aborted, any()}.
 store_robot_info(RobotId, StartPos, GoalPos) ->
     Transaction = fun() ->
@@ -54,6 +60,7 @@ store_robot_info(RobotId, StartPos, GoalPos) ->
     mnesia:transaction(Transaction).
 
 %% @doc Store robot path
+%% @end
 -spec store_path(robot_id(), path()) -> {atomic, ok} | {aborted, any()}.
 store_path(RobotId, Path) ->
     Transaction = fun() ->
@@ -62,6 +69,7 @@ store_path(RobotId, Path) ->
     mnesia:transaction(Transaction).
 
 %% @doc Retrieve all stored data
+%% @end
 -spec get_all_data() -> {[#grid_info{}], [#robot_info{}], [#robot_path{}]}.
 get_all_data() ->
     %% Get grid info
@@ -86,17 +94,20 @@ get_all_data() ->
     {GridInfo, RobotInfo, RobotPaths}.
   
 %% @doc Manhattan distance heuristic
+%% @end
 -spec manhattan_distance(position(), position()) -> non_neg_integer().
 manhattan_distance({X1, Y1}, {X2, Y2}) ->
     abs(X1 - X2) + abs(Y1 - Y2).
 
 %% @doc Check if a move is valid on the grid
+%% @end
 -spec is_valid_move(position()) -> boolean().
 is_valid_move({X, Y}) ->
     X >= 1 andalso X =< 10 andalso 
     Y >= 1 andalso Y =< 10.
 
-%% @doc Generate possible moves (including staying in current cell)
+%% @doc Generate possible moves
+%% @end
 -spec generate_moves(position()) -> [position()].
 generate_moves({X, Y}) ->
     [
@@ -108,6 +119,7 @@ generate_moves({X, Y}) ->
     ].
 
 %% @doc Reconstruct path from goal node
+%% @end
 -spec reconstruct_path(#node{}) -> path().
 reconstruct_path(Node) ->
     reconstruct_path(Node, []).
@@ -119,6 +131,7 @@ reconstruct_path(#node{parent = Parent, position = Pos}, Acc) ->
     reconstruct_path(Parent, [Pos | Acc]).
 
 %% @doc Find the node with lowest f_cost in open list
+%% @end
 -spec find_lowest_f_cost([#node{}], fun((#node{}, #node{}) -> boolean())) -> #node{}.
 find_lowest_f_cost([Node], _) -> Node;
 find_lowest_f_cost([Node1, Node2 | Rest], CompareF) ->
@@ -129,10 +142,12 @@ find_lowest_f_cost([Node1, Node2 | Rest], CompareF) ->
     find_lowest_f_cost([LowestNode | Rest], CompareF).
 
 %% @doc Compare nodes by f_cost
+%% @end
 -spec compare_nodes(#node{}, #node{}) -> boolean().
 compare_nodes(#node{f_cost = F1}, #node{f_cost = F2}) -> F1 =< F2.
 
 %% @doc A* algorithm implementation
+%% @end
 -spec a_star(position(), position(), [position()]) -> path() | {error, no_path}.
 a_star(Start, Goal, Obstacles) ->
     %% Initialize first node
@@ -147,6 +162,7 @@ a_star(Start, Goal, Obstacles) ->
     find_path([StartNode], [], Goal,Obstacles).
 
 %% @doc Recursive path finding
+%% @end
 -spec find_path([#node{}], [position()], position(), [position()]) -> path() | {error, no_path}.
 find_path([], _, _, _) -> 
     {error, no_path};
@@ -209,30 +225,13 @@ find_path(OpenList, ClosedList, Goal, Obstacles) ->
             find_path(UpdatedOpenList, NewClosedList, Goal, Obstacles)
     end.
 
-%% @doc Find paths for multiple robots
-% -spec find_paths([position()], [position()]) -> [path()] | {error, {no_path_for_robot, position(), position()}}.
-% find_paths(RobotStarts, RobotGoals) ->
-%     find_paths(RobotStarts, RobotGoals, [], RobotStarts).
-
-%-spec find_paths([position()], [position()], [path()], [position()]) -> [path()] | {error, {no_path_for_robot, position(), position()}}.
-% find_paths([], [], Paths, _) ->
-%     lists:reverse(Paths);
-% find_paths([Start|StartRest], [Goal|GoalRest], Paths, Obstacles) ->
-%     %% Find path for current robot
-%     case a_star(Start, Goal, Obstacles) of
-%         {error, no_path} -> 
-%             {error, {no_path_for_robot, Start, Goal}};
-%         Path ->
-%             %% Recurse with updated paths
-%             NewObstacles = Obstacles ++ tl(Path),
-%             find_paths(StartRest, GoalRest, [Path | Paths], NewObstacles)
-%     end.
-
 -spec find_paths([position()], [position()]) -> [path()] | {error, {no_path_for_robot, position(), position()}}.
 find_paths(RobotStarts, RobotGoals) ->
     Orderings = permutations(lists:seq(1, length(RobotStarts))),
     try_orders(Orderings, RobotStarts, RobotGoals).
-
+%% @doc Try all possible orders
+%% @end
+-spec try_orders([[integer()]], [position()], [position()]) -> [path()] | {error, no_path_found}.
 try_orders([], _RobotStarts, RobotGoals) ->
     {error, no_path_found};
 try_orders([Order|RestOrders], RobotStarts, RobotGoals) ->
@@ -247,10 +246,15 @@ try_orders([Order|RestOrders], RobotStarts, RobotGoals) ->
                     Paths
             end
     end.
+%% @doc Plan a path considering a orders
+%% @end
 
+-spec plan_paths([integer()], [position()], [position()]) -> [path()] | {error, {no_path_for_robot, position(), position()}}.
 plan_paths(Order, RobotStarts, RobotGoals) ->
     plan_paths(Order, RobotStarts, RobotGoals, []).
 
+
+-spec plan_paths([integer()], [position()], [position()], [path()]) -> [path()] | {error, {no_path_for_robot, position(), position()}}.
 plan_paths([], _RobotStarts, _RobotGoals, Paths) ->
     lists:reverse(Paths);
 plan_paths([Index|Rest], RobotStarts, RobotGoals, Paths) ->
@@ -264,23 +268,31 @@ plan_paths([Index|Rest], RobotStarts, RobotGoals, Paths) ->
             plan_paths(Rest, RobotStarts, RobotGoals, [Path|Paths])
     end.
 
+%% @doc Reserve cell which are occupied in a path
+%% @end
+-spec reserved_obstacles([path()]) -> [position()].
 reserved_obstacles(Paths) ->
     lists:foldl(fun(Path, Acc) ->
         Acc ++ tl(Path) ++ [lists:last(Path)]
     end, [], Paths).
 
+%% @doc Check if path intersects
+%% @end
+-spec paths_intersect([path()]) -> boolean().
 paths_intersect(Paths) ->
     AllPositions = lists:foldl(fun(Path, Acc) -> Acc ++ Path end, [], Paths),
     UniquePositions = lists:usort(AllPositions),
     length(AllPositions) =/= length(UniquePositions).
 
+%% @doc Generate permutaions of orders
+%% @end
+-spec permutations([integer()]) -> [[integer()]].
 permutations([]) -> [[]];
 permutations(List) ->
     [[Elem|Rest] || Elem <- List, Rest <- permutations(lists:delete(Elem, List))].
 
-
-
 %% @doc Example usage with database storage
+%% @end
 -spec start(pos_integer(), [position()], [position()]) -> {[#grid_info{}], [#robot_info{}], [#robot_path{}]} | {error, any()}.
 start(N, Initial, Final) ->
     %% Initialize database
@@ -322,5 +334,3 @@ start(N, Initial, Final) ->
             %% Display all stored data
             get_all_data()
     end.
-    %%% Initial = [{2,1},{2,5},{2,3},{2,4}].
-    %%% Final = [{8,4},{4,9},{5,2},{10,4}].
