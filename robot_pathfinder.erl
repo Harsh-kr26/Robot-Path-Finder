@@ -210,23 +210,75 @@ find_path(OpenList, ClosedList, Goal, Obstacles) ->
     end.
 
 %% @doc Find paths for multiple robots
+% -spec find_paths([position()], [position()]) -> [path()] | {error, {no_path_for_robot, position(), position()}}.
+% find_paths(RobotStarts, RobotGoals) ->
+%     find_paths(RobotStarts, RobotGoals, [], RobotStarts).
+
+%-spec find_paths([position()], [position()], [path()], [position()]) -> [path()] | {error, {no_path_for_robot, position(), position()}}.
+% find_paths([], [], Paths, _) ->
+%     lists:reverse(Paths);
+% find_paths([Start|StartRest], [Goal|GoalRest], Paths, Obstacles) ->
+%     %% Find path for current robot
+%     case a_star(Start, Goal, Obstacles) of
+%         {error, no_path} -> 
+%             {error, {no_path_for_robot, Start, Goal}};
+%         Path ->
+%             %% Recurse with updated paths
+%             NewObstacles = Obstacles ++ tl(Path),
+%             find_paths(StartRest, GoalRest, [Path | Paths], NewObstacles)
+%     end.
+
 -spec find_paths([position()], [position()]) -> [path()] | {error, {no_path_for_robot, position(), position()}}.
 find_paths(RobotStarts, RobotGoals) ->
-    find_paths(RobotStarts, RobotGoals, [], RobotStarts).
+    Orderings = permutations(lists:seq(1, length(RobotStarts))),
+    try_orders(Orderings, RobotStarts, RobotGoals).
 
--spec find_paths([position()], [position()], [path()], [position()]) -> [path()] | {error, {no_path_for_robot, position(), position()}}.
-find_paths([], [], Paths, _) ->
+try_orders([], _RobotStarts, RobotGoals) ->
+    {error, no_path_found};
+try_orders([Order|RestOrders], RobotStarts, RobotGoals) ->
+    case plan_paths(Order, RobotStarts, RobotGoals) of
+        {error, _} ->
+            try_orders(RestOrders, RobotStarts, RobotGoals);
+        Paths ->
+            case paths_intersect(Paths) of
+                true ->
+                    try_orders(RestOrders, RobotStarts, RobotGoals);
+                false ->
+                    Paths
+            end
+    end.
+
+plan_paths(Order, RobotStarts, RobotGoals) ->
+    plan_paths(Order, RobotStarts, RobotGoals, []).
+
+plan_paths([], _RobotStarts, _RobotGoals, Paths) ->
     lists:reverse(Paths);
-find_paths([Start|StartRest], [Goal|GoalRest], Paths, Obstacles) ->
-    %% Find path for current robot
+plan_paths([Index|Rest], RobotStarts, RobotGoals, Paths) ->
+    Start = lists:nth(Index, RobotStarts),
+    Goal = lists:nth(Index, RobotGoals),
+    Obstacles = reserved_obstacles(Paths),
     case a_star(Start, Goal, Obstacles) of
-        {error, no_path} -> 
+        {error, no_path} ->
             {error, {no_path_for_robot, Start, Goal}};
         Path ->
-            %% Recurse with updated paths
-            NewObstacles = Obstacles ++ Path,
-            find_paths(StartRest, GoalRest, [Path | Paths], NewObstacles)
+            plan_paths(Rest, RobotStarts, RobotGoals, [Path|Paths])
     end.
+
+reserved_obstacles(Paths) ->
+    lists:foldl(fun(Path, Acc) ->
+        Acc ++ tl(Path) ++ [lists:last(Path)]
+    end, [], Paths).
+
+paths_intersect(Paths) ->
+    AllPositions = lists:foldl(fun(Path, Acc) -> Acc ++ Path end, [], Paths),
+    UniquePositions = lists:usort(AllPositions),
+    length(AllPositions) =/= length(UniquePositions).
+
+permutations([]) -> [[]];
+permutations(List) ->
+    [[Elem|Rest] || Elem <- List, Rest <- permutations(lists:delete(Elem, List))].
+
+
 
 %% @doc Example usage with database storage
 -spec start(pos_integer(), [position()], [position()]) -> {[#grid_info{}], [#robot_info{}], [#robot_path{}]} | {error, any()}.
@@ -251,6 +303,9 @@ start(N, Initial, Final) ->
         {error, {no_path_for_robot, Start, Goal}} ->
             io:format("No path found for robot from ~p to ~p", [Start, Goal]),
             {error, {no_path_for_robot, Start, Goal}};
+        {error, no_path_found} ->
+            io:format("No non-intersecting paths found~n", []),
+            {error, no_path_found};
         Paths ->
             %% Store and print paths
             lists:foreach(
@@ -261,6 +316,8 @@ start(N, Initial, Final) ->
                 end,
                 lists:zip3(lists:seq(1, length(Initial)), Initial, Paths)
             ),
+
+
             
             %% Display all stored data
             get_all_data()
